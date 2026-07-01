@@ -1,0 +1,9 @@
+preprocessing:
+  text_column: "Текст Сообщения"
+  lowercase: true
+  remove_html: true
+  remove_non_alpha: true
+  extra_stopwords: ["это", "который"]
+  use_stemming: false
+  use_lemmatization: true
+  ngram_range: [1, 2]
