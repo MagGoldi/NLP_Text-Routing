@@ -1,73 +1,13 @@
 import numpy as np
 import pandas as pd
 
-import re
-from nltk.util import ngrams
-from nltk.tokenize import word_tokenize
-from nltk.corpus import stopwords
-from nltk.stem.snowball import SnowballStemmer
-import html
-import pymorphy3
-from typing import Optional, Tuple, List
-
 import torch
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer
 from sklearn.feature_extraction.text import TfidfVectorizer
+from typing import Optional, Tuple, List
 
-
-
-def clean_text(row):    
-    row = html.unescape(row) 
-    row = re.sub(r"<.*?>", "", row)
-    row = row.lower()
-    row = re.sub(r'[^a-zA-Zа-яё\s]', '', row)
-    row = re.sub(r'^\s+|\s+$', '', re.sub(r'\s+', ' ', row))
-    return row
-
-def get_token_nltk(row):
-    return word_tokenize(row)
-
-
-def get_token_str(row):
-    return row.split()    
-
-
-def remove_stopwords(tokens, extra_stopwords=None):
-    russian_stopwords = stopwords.words('russian')
-    # Объединяем стандартные стоп-слова с пользовательским списком (если он есть)
-    all_stopwords = set(russian_stopwords)
-    if extra_stopwords:
-        all_stopwords.update(extra_stopwords)
-    
-    # Фильтруем токены
-    filtered_tokens = [token for token in tokens if token not in all_stopwords]
-    return filtered_tokens
-
-
-def get_stemmer(tokens):
-    stemmer = SnowballStemmer("russian")
-
-    stemmed_tokens = [stemmer.stem(token) for token in tokens]
-    return stemmed_tokens
-
-morph = pymorphy3.MorphAnalyzer() 
-def get_lemming(tokens):
-    return [morph.parse(token)[0].normal_form for token in tokens]
-
-def get_ngrams(row, n=2):
-    return list(ngrams(row, n))
-
-
-def preprocess_data(df):
-    df['clean_text'] = df['Текст Сообщения'].apply(clean_text)
-    df['tokens'] = df['clean_text'].apply(get_token_str)
-    df['tokens_no_stop'] = df['tokens'].apply(remove_stopwords)
-    df['stemmer'] = df['tokens_no_stop'].apply(get_stemmer)
-    df['lemming'] = df['tokens_no_stop'].apply(get_lemming)
-
-    return df
 
 class TextDataManager:
     def __init__(self, 
@@ -175,7 +115,6 @@ class TextDataManager:
         catboost_proba, bert_proba должны быть для валидации или теста.
         """
         return np.hstack([catboost_proba, bert_proba])
-
 
 
 class BertDataset(Dataset):

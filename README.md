@@ -44,3 +44,31 @@
 - [TREC: Text Retrieval Conference](https://trec.nist.gov/)
 - [RuSentiment: Russian Sentiment Dataset](https://github.com/text-machine-lab/RuSentiment)
 
+
+customer-complaint-classification/
+├── data/               # игнорируется git, но есть .gitkeep
+│   ├── raw/
+│   └── processed/
+├── notebooks/          # jupyter для EDA и прототипирования
+├── src/
+│   ├── __init__.py
+│   ├── data/           # загрузка, препроцессинг
+│   ├── features/       # извлечение признаков
+│   ├── models/         # обучение, оценка
+│   ├── api/            # FastAPI
+│   └── visualization/  # визуализации для streamlit
+├── frontend/           # streamlit app
+├── tests/
+├── configs/            # конфиги (модель, параметры)
+├── docker/
+│   ├── Dockerfile.api
+│   ├── Dockerfile.frontend
+│   └── docker-compose.yml
+├── mlruns/             # (может в .gitignore) или используем MLflow server
+├── airflow/            # DAGs для периодического переобучения
+├── .github/            # CI/CD (lint, tests)
+├── Makefile
+├── pyproject.toml      # poetry
+├── README.md
+└── .gitignore
+
