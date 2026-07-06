@@ -11,11 +11,7 @@ import yaml
 import pymorphy3
 from time import perf_counter
 
-
-def load_config(config_path="/home/andrew/worka/NLP_classification/configs/preprocess.yaml"):
-    with open(config_path, 'r', encoding='utf-8') as file:
-        config = yaml.safe_load(file)
-    return config
+from src.data.load import load_config
 
 CONFIG = load_config()
 EXTRA_STOPWORDS = CONFIG.get('preprocessing', {}).get('extra_stopwords', [])

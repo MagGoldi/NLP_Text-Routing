@@ -1,4 +1,5 @@
 preprocessing:
+  preprocessing: false
   text_column: "Текст Сообщения"
   lowercase: true
   remove_html: true
@@ -6,9 +7,16 @@ preprocessing:
   extra_stopwords: ["это", "который", 'ас', 'г', 'д', 'е', 'ул']
   use_stemming: false
   use_lemmatization: true
-  ngram_range: [1, 2]
+  ngram_range: [1, 2, 3]
 
 models:
-  
 
+# --- Модель -------------------------------------------------------------------
+# Варианты:
+#     'log_reg': LogRegModel,
+#     'catboost': CatBoostModel,
+#     'rubert': RuBERTModel,
+#     'ensemble': EnsembleModel
+  MODEL_NAME: rubert
+  
 train:

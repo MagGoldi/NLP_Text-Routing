@@ -1,4 +1,6 @@
 import os
+import csv
+from datetime import datetime
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
@@ -11,21 +13,44 @@ from sklearn.preprocessing import label_binarize
 import warnings
 warnings.filterwarnings("ignore")
 
+
+def log_run(model_name: str, f1: float, duration_sec: float, log_path: str = "data/run_log.csv"):
+    """
+    Добавляет строку с результатом запуска модели в общий CSV-лог экспериментов
+    (дата, модель, f1, время выполнения). Один файл на все модели/подходы.
+    """
+    os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
+    file_exists = os.path.isfile(log_path)
+    with open(log_path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(["date", "model", "f1", "duration_sec"])
+        writer.writerow([
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            model_name,
+            f"{f1:.4f}",
+            f"{duration_sec:.2f}",
+        ])
+    print(f"✅ Запись добавлена в лог запусков: {log_path}")
+
+
 class Visualizer:
     """
     Визуализатор для многоклассовой классификации с большим числом классов (60+).
     Адаптирован для компактного отображения.
     """
-    def __init__(self, output_dir: str = "data/visualizations", dpi: int = 300, top_k: int = 10):
+    def __init__(self, output_dir: str = "data/visualizations", model_name: str = None, dpi: int = 300, top_k: int = 10):
         """
-        :param output_dir: папка для сохранения рисунков
+        :param output_dir: базовая папка для сохранения рисунков
+        :param model_name: если указано, результаты пишутся в output_dir/model_name
+            (чтобы визуализации разных моделей/подходов не перезаписывали друг друга)
         :param dpi: разрешение
         :param top_k: сколько классов показывать на матрице ошибок и вероятностях
         """
-        self.output_dir = output_dir
+        self.output_dir = os.path.join(output_dir, model_name) if model_name else output_dir
         self.dpi = dpi
         self.top_k = top_k
-        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(self.output_dir, exist_ok=True)
         sns.set_style("whitegrid")
         plt.rcParams["font.size"] = 10
         plt.rcParams["axes.titlesize"] = 12
@@ -194,6 +219,38 @@ class Visualizer:
         fig.suptitle(f"Распределение вероятностей для топ-{self.top_k} классов")
         plt.tight_layout()
         self._save_figure(fig, "probability_distribution_top.png")
+
+    # ---------- 7a. Универсальное извлечение важности признаков ----------
+    def extract_feature_importance(self, model, feature_names=None):
+        """
+        Достаёт важность признаков из любой обёртки модели (BaseModel) или
+        сырого объекта (sklearn/CatBoost), не зная заранее её типа.
+
+        Поддерживает:
+          - линейные модели с .coef_ (например LogisticRegression)
+          - модели с .feature_importances_ (например CatBoost)
+        Для моделей без интерпретируемых по-признаково весов (RuBERT, Ensemble
+        поверх вероятностей и т.п.) возвращает (None, None) — вызывающий код
+        должен пропустить построение графика.
+
+        :return: (feature_names, importances) либо (None, None)
+        """
+        raw_model = getattr(model, "model", model)
+
+        if hasattr(raw_model, "coef_"):
+            coef = np.asarray(raw_model.coef_)
+            importances = np.mean(np.abs(coef), axis=0) if coef.ndim == 2 else np.abs(coef)
+        elif hasattr(raw_model, "feature_importances_"):
+            importances = np.asarray(raw_model.feature_importances_)
+        else:
+            return None, None
+
+        if feature_names is None:
+            feature_names = [f"f{i}" for i in range(len(importances))]
+        if len(feature_names) != len(importances):
+            feature_names = [f"f{i}" for i in range(len(importances))]
+
+        return list(feature_names), importances
 
     # ---------- 7. Feature importance (оставляем, адаптируем под мультикласс) ----------
     def plot_feature_importance(self, feature_names, coefficients, top_n=10, title="Важность признаков"):
