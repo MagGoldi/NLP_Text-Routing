@@ -7,7 +7,6 @@ from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from nltk.stem.snowball import SnowballStemmer
 import html
-import yaml
 import pymorphy3
 from time import perf_counter
 
@@ -18,6 +17,26 @@ EXTRA_STOPWORDS = CONFIG.get('preprocessing', {}).get('extra_stopwords', [])
 
 MORPHY = pymorphy3.MorphAnalyzer()
 RUSSIAN_STOPWORDS = stopwords.words('russian') 
+
+
+def clean_for_catboost(text: str) -> str:
+    text = html.unescape(text)
+    text = re.sub(r'<[^>]+>', ' ', text)
+    text = text.replace('`', ' ')
+    text = re.sub(r'[^а-яёa-z ]', ' ', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s+', ' ', text)
+    text = text.lower().strip()
+    
+    return text
+
+
+def clean_text_rubert(text):
+    text = html.unescape(text)
+    text = re.sub(r'<[^>]+>', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    text = text.replace('`', '"')
+
+    return text.strip()
 
 
 def clean_text(row):    

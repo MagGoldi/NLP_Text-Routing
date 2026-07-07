@@ -11,7 +11,6 @@ sys.path.insert(0, project_root)
 from src.data.preprocessor import timed_preprocess
 from src.data.load import load_dataset, load_config
 from src.models.dataloader import TextDataManager
-#from src.models.train import train_logreg
 from src.models.models import build_model
 from src.visualization.visualizer import Visualizer, log_run
 

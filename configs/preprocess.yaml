@@ -1,5 +1,5 @@
 preprocessing:
-  preprocessing: false
+  preprocessing: true
   text_column: "Текст Сообщения"
   lowercase: true
   remove_html: true
@@ -17,6 +17,6 @@ models:
 #     'catboost': CatBoostModel,
 #     'rubert': RuBERTModel,
 #     'ensemble': EnsembleModel
-  MODEL_NAME: rubert
-  
+  MODEL_NAME: catboost
+
 train:
