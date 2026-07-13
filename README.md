@@ -22,7 +22,7 @@
 
 - ✅ **Baseline**: TF-IDF + Logistic Regression
 - ✅ **CatBoost**: модель с учётом текстовых и категориальных признаков
-- ✅ **Transformer**: fine-tuning `sberbank-ai/ruBERT-base-cased`
+- ✅ **Transformer**: fine-tuning `DeepPavlov/rubert-base-cased`
 - ✅ **Ensemble**: объединение CatBoost и RuBERT
 
 ---

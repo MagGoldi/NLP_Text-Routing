@@ -1,5 +1,6 @@
 preprocessing:
-  preprocessing: true
+  enabled: true
+
   text_column: "Текст Сообщения"
   lowercase: true
   remove_html: true
@@ -17,6 +18,23 @@ models:
 #     'catboost': CatBoostModel,
 #     'rubert': RuBERTModel,
 #     'ensemble': EnsembleModel
-  MODEL_NAME: catboost
+  name: rubert
+  fine_tune_mode: full # ['full', 'gradual']
+  # Специфичные для модели гиперпараметры, распаковываются как **kwargs
+  # в build_model() / model.train() (например, epochs, learning_rate, iterations)
+  params: {}
 
-train:
+data:
+  num_labels: 17
+  test_size: 0.2
+  val_size: 0.1
+  random_state: 42
+
+logging:
+  log_dir: "logs"
+  level: "INFO"
+
+mlflow:
+  enabled: true
+  tracking_uri: "file:./mlruns"
+  experiment_name: "nlp_classification"

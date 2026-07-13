@@ -10,16 +10,16 @@ import html
 import pymorphy3
 from time import perf_counter
 
-from src.data.load import load_config
+from src.config import load_config
 
 CONFIG = load_config()
-EXTRA_STOPWORDS = CONFIG.get('preprocessing', {}).get('extra_stopwords', [])
+EXTRA_STOPWORDS = CONFIG.preprocessing.extra_stopwords
 
 MORPHY = pymorphy3.MorphAnalyzer()
 RUSSIAN_STOPWORDS = stopwords.words('russian') 
 
 
-def clean_for_catboost(text: str) -> str:
+def clean_text_for_catboost(text: str) -> str:
     text = html.unescape(text)
     text = re.sub(r'<[^>]+>', ' ', text)
     text = text.replace('`', ' ')
@@ -30,7 +30,7 @@ def clean_for_catboost(text: str) -> str:
     return text
 
 
-def clean_text_rubert(text):
+def clean_text_for_rubert(text):
     text = html.unescape(text)
     text = re.sub(r'<[^>]+>', ' ', text)
     text = re.sub(r'\s+', ' ', text)
@@ -39,30 +39,46 @@ def clean_text_rubert(text):
     return text.strip()
 
 
-def clean_text(row):    
-    row = html.unescape(row) 
-    row = re.sub(r"<.*?>", "", row)
-    row = row.lower()
-    row = re.sub(r'[^a-zA-Zа-яё\s]', '', row)
-    row = re.sub(r'^\s+|\s+$', '', re.sub(r'\s+', ' ', row))
-    return row
+def clean_text_classic(text):
+    text = html.unescape(text) 
+    text = re.sub(r"<.*?>", "", text)
+    text = text.lower()
+    text = re.sub(r'[^a-zA-Zа-яё\s]', '', text)
+    text = re.sub(r'^\s+|\s+$', '', re.sub(r'\s+', ' ', text))
 
-def get_token_nltk(row):
-    return word_tokenize(row)
+    tokens = text.split() 
+
+    all_stopwords = set(RUSSIAN_STOPWORDS)
+    all_stopwords.update(EXTRA_STOPWORDS) 
+    filter_tokens = [token for token in tokens if token not in all_stopwords]
+
+    lemman_token = [MORPHY.parse(token)[0].normal_form for token in filter_tokens]
+    
+    return lemman_token
 
 
-def get_token_str(row):
-    return row.split()    
+def clean_text(text):    
+    text = html.unescape(text) 
+    text = re.sub(r"<.*?>", "", text)
+    text = text.lower()
+    text = re.sub(r'[^a-zA-Zа-яё\s]', '', text)
+    text = re.sub(r'^\s+|\s+$', '', re.sub(r'\s+', ' ', text))
+    return text
+
+def get_token_nltk(text):
+    return word_tokenize(text)
+
+
+def get_token_str(text):
+    return text.split()    
 
 
 def remove_stopwords(tokens, extra_stopwords=None):
     russian_stopwords = stopwords.words('russian')
-    # Объединяем стандартные стоп-слова с пользовательским списком (если он есть)
     all_stopwords = set(russian_stopwords)
     if extra_stopwords:
         all_stopwords.update(extra_stopwords)
     
-    # Фильтруем токены
     filtered_tokens = [token for token in tokens if token not in all_stopwords]
     return filtered_tokens
 
@@ -78,8 +94,8 @@ def get_lemming(tokens):
     return [MORPHY.parse(token)[0].normal_form for token in tokens]
 
 
-def get_ngrams(row, n=2):
-    return list(ngrams(row, n))
+def get_ngrams(text, n=2):
+    return list(ngrams(text, n))
 
 
 def preprocess_data(df):
@@ -92,30 +108,17 @@ def preprocess_data(df):
     return df
 
 
-def timed_preprocess(series):
+def timed_preprocess(series, model_name):
     start = perf_counter()
-    result = series.apply(preprocess)
+
+    if model_name == 'log_reg':
+        result = series.apply(clean_text_classic)
+    elif model_name == 'catboost':
+        result = series.apply(clean_text_for_catboost)
+    elif model_name == 'rubert':
+        result = series.apply(clean_text_for_rubert)
+    else:
+        result = series.apply(clean_text_classic)
+
     print(f"Обработка {len(series)} строк за {perf_counter()-start:.2f} сек")
     return result
-
-
-def preprocess(text):
-    #1) Чистит HTML и знаки препинания (regex)
-    text = html.unescape(text) 
-    text = re.sub(r"<.*?>", "", text)
-    text = text.lower()
-    text = re.sub(r'[^a-zA-Zа-яё\s]', '', text)
-    text = re.sub(r'^\s+|\s+$', '', re.sub(r'\s+', ' ', text))
-
-    #2) Токенизирует
-    tokens = text.split() 
-
-    #3) Убирает стоп-слова
-    all_stopwords = set(RUSSIAN_STOPWORDS)
-    all_stopwords.update(EXTRA_STOPWORDS)  # Используем стоп-слова из конфига
-    filter_tokens = [token for token in tokens if token not in all_stopwords]
-
-    #4) Лемматизирует
-    lemman_token = [MORPHY.parse(token)[0].normal_form for token in filter_tokens]
-    
-    return lemman_token

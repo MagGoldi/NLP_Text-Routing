@@ -107,7 +107,9 @@ class CatBoostModel(BaseModel):
 
 
 class RuBERTModel(BaseModel):
-    def __init__(self, model_name='sberbank-ai/rubert-base-cased', num_labels=None, max_length=512, **kwargs):
+    def __init__(self, model_name='DeepPavlov/rubert-base-cased', num_labels=None, max_length=512, **kwargs):
+        if num_labels is None:
+            raise ValueError("RuBERTModel требует явный num_labels (например, из cfg.data.num_labels).")
         self.model_name = model_name
         self.num_labels = num_labels
         self.max_length = max_length
@@ -138,13 +140,15 @@ class RuBERTModel(BaseModel):
         unfreeze_layers = kwargs.pop('unfreeze_layers', 4)
         unfreeze_epochs = kwargs.pop('unfreeze_epochs', 3)
         unfreeze_lr = kwargs.pop('unfreeze_lr', 2e-5)
+        # callbacks не является полем TrainingArguments, поэтому вынимаем его отдельно
+        callbacks = kwargs.pop('callbacks', None)
 
         # --- базовые настройки TrainingArguments ---
         base_args = dict(
             output_dir='./bert_results',
             per_device_train_batch_size=32,
             per_device_eval_batch_size=32,
-            evaluation_strategy='epoch',
+            eval_strategy='epoch',
             save_strategy='epoch',
             logging_dir='./logs',
             load_best_model_at_end=True,
@@ -177,6 +181,7 @@ class RuBERTModel(BaseModel):
                 train_dataset=train_loader.dataset,
                 eval_dataset=val_loader.dataset,
                 compute_metrics=compute_metrics,
+                callbacks=callbacks,
             )
             self.trainer.train()
 
@@ -196,6 +201,7 @@ class RuBERTModel(BaseModel):
                 train_dataset=train_loader.dataset,
                 eval_dataset=val_loader.dataset,
                 compute_metrics=compute_metrics,
+                callbacks=callbacks,
             )
             trainer1.train()
 
@@ -217,6 +223,7 @@ class RuBERTModel(BaseModel):
                 train_dataset=train_loader.dataset,
                 eval_dataset=val_loader.dataset,
                 compute_metrics=compute_metrics,
+                callbacks=callbacks,
             )
             trainer2.train()
             self.trainer = trainer2   # сохраняем последний Trainer

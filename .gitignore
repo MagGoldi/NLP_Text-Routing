@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Experiment tracking / logs (generated at runtime)
+mlruns/
+logs/
+bert_results/
+

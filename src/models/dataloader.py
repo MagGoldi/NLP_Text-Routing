@@ -13,7 +13,7 @@ class TextDataManager:
     def __init__(self, 
                 df: pd.DataFrame, 
                 text_col: str = 'result', 
-                label_col: str = 'Theme',
+                label_col: str = 'Категория',
                 test_size: float = 0.2,
                 val_size: float = 0.1,
                 random_state: int = 42
@@ -86,7 +86,7 @@ class TextDataManager:
     def get_bert_dataloaders(
         self,
         tokenizer: Optional[AutoTokenizer] = None,
-        model_name: str = 'sberbank-ai/rubert-base-cased',
+        model_name: str = 'DeepPavlov/rubert-base-cased',
         max_len: int = 128,
         batch_size: int = 32,
         shuffle_train: bool = True
