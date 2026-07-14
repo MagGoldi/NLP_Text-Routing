@@ -10,10 +10,10 @@ import html
 import pymorphy3
 from time import perf_counter
 
-from src.config import load_config
+from src.config.schema import PreprocessingCfg
 
-CONFIG = load_config()
-EXTRA_STOPWORDS = CONFIG.preprocessing.extra_stopwords
+CONFIG = PreprocessingCfg
+EXTRA_STOPWORDS = CONFIG.extra_stopwords
 
 MORPHY = pymorphy3.MorphAnalyzer()
 RUSSIAN_STOPWORDS = stopwords.words('russian') 

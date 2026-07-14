@@ -1,6 +1,5 @@
 preprocessing:
   enabled: true
-
   text_column: "Текст Сообщения"
   lowercase: true
   remove_html: true
@@ -10,22 +9,15 @@ preprocessing:
   use_lemmatization: true
   ngram_range: [1, 2, 3]
 
-models:
-
-# --- Модель -------------------------------------------------------------------
-# Варианты:
-#     'log_reg': LogRegModel,
-#     'catboost': CatBoostModel,
-#     'rubert': RuBERTModel,
-#     'ensemble': EnsembleModel
-  name: rubert
-  fine_tune_mode: full # ['full', 'gradual']
-  # Специфичные для модели гиперпараметры, распаковываются как **kwargs
-  # в build_model() / model.train() (например, epochs, learning_rate, iterations)
-  params: {}
+model:
+  kind: rubert
+  fine_tune_mode: gradual
+  learning_rate: 2.0e-5
+  num_train_epochs: 5
+  max_length: 256
 
 data:
-  num_labels: 17
+  path: 'data/raw/train_dataset_train.csv'
   test_size: 0.2
   val_size: 0.1
   random_state: 42
@@ -34,7 +26,7 @@ logging:
   log_dir: "logs"
   level: "INFO"
 
-mlflow:
+tracking:
   enabled: true
   tracking_uri: "file:./mlruns"
   experiment_name: "nlp_classification"
