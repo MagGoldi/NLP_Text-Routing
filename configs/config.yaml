@@ -10,21 +10,37 @@ preprocessing:
   ngram_range: [1, 2, 3]
 
 model:
-  kind: log_reg
-  C: 1
-  max_iter: 1000
-  ngram_range: [1, 4]
+  # kind: log_reg
+  # class_weight: balanced
+  # C: 1.25
+  # max_iter: 1000
+  # ngram_range: [3, 5]
+  # analyzer: char_wb
+  # min_df: 2
 
   # kind: catboost
   # iterations: 1000
+  # auto_class_weights: Balanced
   # learning_rate: 0.03
   # ngram_range: [1, 3]
 
-  # kind: rubert
-  # fine_tune_mode: full
-  # learning_rate: 2.0e-5
-  # num_train_epochs: 20
-  # max_length: 256
+  kind: rubert
+  fine_tune_mode: full
+  learning_rate: 2.0e-5
+  num_train_epochs: 20
+  max_length: 512
+
+  # EarlyStopping: True
+  # Augmentation: True
+  # Loss: CrossEntriopy, Focal
+
+
+  Какие ещё модели попробовать
+ai-forever/ruRoberta-large — да, разумный следующий шаг (это, видимо, и есть твоя «Ру Роберто»). RoBERTa-объектив + больше параметров, на русских бенчмарках обычно выше DeepPavlov/rubert-base.
+ai-forever/ruBert-base/ruBert-large — другое предобучение (не DeepPavlov), стоит сравнить.
+cointegrated/rubert-tiny2 — маленькая, но неожиданно сильная модель для классификации, быстро итерировать при экспериментах с аугментацией/loss.
+SetFit (contrastive fine-tuning на sentence-transformers) — специально создан для режима «мало примеров на класс», часто обгоняет обычный fine-tuning именно на данных твоего масштаба (десятки примеров на класс).
+Ensemble — у тебя в models.py уже есть заготовка EnsembleModel, просто не подключена в main.py (нет сборки base_models). CatBoost (сильный на доминирующих классах 0/3) + RuBERT (сильный на смысловых нюансах) в стекинге может дать прирост именно за счёт того, что модели ошибаются по-разному.
 
 data:
   path: 'data/raw/train_dataset_train.csv'

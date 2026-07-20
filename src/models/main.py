@@ -4,6 +4,7 @@ import os
 import time
 from datetime import datetime
 import mlflow
+from transformers import EarlyStoppingCallback
 
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
@@ -46,14 +47,18 @@ dm = TextDataManager(
     test_size=cfg.data.test_size,
     val_size=cfg.data.val_size,
     random_state=cfg.data.random_state,
-    min_df = cfg.data.min_df
 )
 
 if cfg.model.kind == 'rubert':
     train_loader, val_loader, test_loader, tokenizer = dm.get_bert_dataloaders()
+elif cfg.model.kind == 'catboost':
+    X_train_tf, X_val_tf, X_test_tf = dm.get_catboost_data()
 else:
     X_train_tf, X_val_tf, X_test_tf, vec = dm.get_tfidf_data(
-        ngram_range=cfg.model.ngram_range, max_features=cfg.model.max_features, min_df = cfg.data.min_df
+        ngram_range=cfg.model.ngram_range,
+        max_features=cfg.model.max_features,
+        min_df=cfg.model.min_df,
+        analyzer=cfg.model.analyzer,
     )
 
 # Гиперпараметры конфига теперь типизированные поля cfg.model, а не свободный словарь.
@@ -74,8 +79,13 @@ if cfg.model.kind == 'rubert':
         num_labels=max(dm.classes) + 1,
         max_length=cfg.model.max_length,
     )
+elif cfg.model.kind == 'catboost':
+    # get_catboost_data() всегда называет колонку с сырым текстом 'text' — говорим
+    # CatBoost явно, что это текстовый признак, иначе он попытается прочитать строку как число.
+    model_kwargs = cfg.model.model_dump(exclude={'kind', 'ngram_range', 'max_features', 'min_df', 'analyzer'})
+    model = build_model(cfg.model.kind, text_features=['text'], **model_kwargs)
 else:
-    model_kwargs = cfg.model.model_dump(exclude={'kind', 'ngram_range', 'max_features'})
+    model_kwargs = cfg.model.model_dump(exclude={'kind', 'ngram_range', 'max_features', 'min_df', 'analyzer'})
     model = build_model(cfg.model.kind, **model_kwargs)
 
 mlflow_ctx = contextlib.nullcontext()
@@ -100,7 +110,7 @@ with mlflow_ctx:
             per_device_train_batch_size=cfg.model.batch_size,
             per_device_eval_batch_size=cfg.model.batch_size,
             warmup_ratio=cfg.model.warmup_ratio,
-            callbacks=[FileLoggingCallback(logger)],
+            callbacks=[FileLoggingCallback(logger), EarlyStoppingCallback(early_stopping_patience=3)],
         )
         if cfg.tracking.enabled and cfg.model.fine_tune_mode == 'full':
             # HF MLflowCallback логирует params/metrics прямо в текущий активный run.
@@ -149,7 +159,7 @@ with mlflow_ctx:
     viz.plot_probability_distribution_top(dm.y_test, y_test_proba, class_names=dm.classes)
 
     # 7. Важность признаков (универсально: coef_ / feature_importances_ / пропуск, если не поддерживается)
-    feature_names = vec.get_feature_names_out() if cfg.model.kind != 'rubert' else None
+    feature_names = vec.get_feature_names_out() if cfg.model.kind == 'log_reg' else None
     fi_names, fi_values = viz.extract_feature_importance(model_fit, feature_names=feature_names)
     if fi_values is not None:
         viz.plot_feature_importance(fi_names, fi_values, top_n=15)
@@ -160,9 +170,15 @@ with mlflow_ctx:
     df_metrics, summary = viz.save_metrics_table(dm.y_test, y_test_pred, class_names=dm.classes)
     logger.info("Итоговые метрики:\n%s", summary)
 
-    # 9. Залогировать запуск (дата, модель, f1, время выполнения) в общий data/run_log.csv
+    # 9. Залогировать запуск (дата, модель, f1_macro, f1_weighted, время выполнения) в общий data/run_log.csv
     run_log_path = "data/run_log.csv"
-    log_run(model_name=cfg.model.kind, f1=summary['f1_weighted'][0], duration_sec=run_duration, log_path=run_log_path)
+    log_run(
+        model_name=cfg.model.kind,
+        f1_macro=summary['f1_macro'][0],
+        f1_weighted=summary['f1_weighted'][0],
+        duration_sec=run_duration,
+        log_path=run_log_path,
+    )
 
     if cfg.tracking.enabled:
         mlflow.log_metrics({

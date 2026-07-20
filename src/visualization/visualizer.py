@@ -14,21 +14,22 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-def log_run(model_name: str, f1: float, duration_sec: float, log_path: str = "data/run_log.csv"):
+def log_run(model_name: str, f1_macro: float, f1_weighted: float, duration_sec: float, log_path: str = "data/run_log.csv"):
     """
     Добавляет строку с результатом запуска модели в общий CSV-лог экспериментов
-    (дата, модель, f1, время выполнения). Один файл на все модели/подходы.
+    (дата, модель, f1_macro, f1_weighted, время выполнения). Один файл на все модели/подходы.
     """
     os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
     file_exists = os.path.isfile(log_path)
     with open(log_path, "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         if not file_exists:
-            writer.writerow(["date", "model", "f1", "duration_sec"])
+            writer.writerow(["date", "model", "f1_macro", "f1_weighted", "duration_sec"])
         writer.writerow([
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             model_name,
-            f"{f1:.4f}",
+            f"{f1_macro:.4f}",
+            f"{f1_weighted:.4f}",
             f"{duration_sec:.2f}",
         ])
     print(f"✅ Запись добавлена в лог запусков: {log_path}")

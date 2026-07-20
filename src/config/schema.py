@@ -20,7 +20,6 @@ class DataCfg(StrictModel):
     test_size: float = Field(0.15, gt=0, lt=1)
     val_size: float = Field(0.15, gt=0, lt=1)
     random_state: int = 42
-    min_df: 2
 
     @model_validator(mode="after")
     def _splits_must_fit(self):
@@ -60,6 +59,8 @@ class LogRegCfg(BaseModelCfg):
     # ngram_range — это (min_n, max_n) для TfidfVectorizer, не список конкретных N
     ngram_range: tuple[int, int] = (1, 2)
     max_features: int = Field(10_000, ge=1)
+    min_df: int = Field(1, ge=1)  # выкинуть термины, встретившиеся реже min_df раз
+    analyzer: Literal["word", "char", "char_wb"] = "word"
 
 class CatBoostCfg(BaseModelCfg):
     kind: Literal["catboost"]
@@ -67,7 +68,10 @@ class CatBoostCfg(BaseModelCfg):
     depth: int = Field(6, ge=1, le=16)
     learning_rate: float = Field(0.03, gt=0)
     ngram_range: tuple[int, int] = (1, 2)
+    min_df: int = Field(1, ge=1)
+    analyzer: Literal["word", "char", "char_wb"] = "word"
     max_features: int = Field(10_000, ge=1)
+    auto_class_weights: str = 'Balanced'
 
 class RubertCfg(BaseModelCfg):
     kind: Literal["rubert"]
