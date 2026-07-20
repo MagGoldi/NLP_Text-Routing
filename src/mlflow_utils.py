@@ -1,12 +1,12 @@
 import mlflow
 
-from src.config.schema import TrackingCfg
+from src.config.schema import Config, TrackingCfg
 
 
 def init_mlflow(cfg: TrackingCfg):
     """Настраивает tracking URI и experiment. Вызывать один раз перед mlflow.start_run()."""
-    mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
-    mlflow.set_experiment(cfg.mlflow.experiment_name)
+    mlflow.set_tracking_uri(cfg.tracking_uri)
+    mlflow.set_experiment(cfg.experiment_name)
 
 
 def _flatten(prefix: str, value, out: dict):
@@ -17,10 +17,10 @@ def _flatten(prefix: str, value, out: dict):
         out[prefix] = value
 
 
-def flatten_config_params(cfg: TrackingCfg) -> dict:
-    """Разворачивает вложенный TrackingCfg в плоский dict для mlflow.log_params."""
+def flatten_config_params(cfg: Config) -> dict:
+    """Разворачивает весь конфиг в плоский dict для mlflow.log_params (воспроизводимость запуска)."""
     flat = {}
-    _flatten("", cfg.model_dump(), flat)
+    _flatten("", cfg.model_dump(mode="json"), flat)
     return flat
 
 

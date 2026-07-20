@@ -46,25 +46,41 @@ dm = TextDataManager(
     test_size=cfg.data.test_size,
     val_size=cfg.data.val_size,
     random_state=cfg.data.random_state,
+    min_df = cfg.data.min_df
 )
 
 if cfg.model.kind == 'rubert':
     train_loader, val_loader, test_loader, tokenizer = dm.get_bert_dataloaders()
 else:
-    X_train_tf, X_val_tf, X_test_tf, vec = dm.get_tfidf_data(ngram_range=(1, 2), max_features=10000)
+    X_train_tf, X_val_tf, X_test_tf, vec = dm.get_tfidf_data(
+        ngram_range=cfg.model.ngram_range, max_features=cfg.model.max_features, min_df = cfg.data.min_df
+    )
 
-# Гиперпараметры из конфига: для log_reg/catboost это kwargs конструктора модели;
-# для rubert конструктор их не читает, поэтому там params уходят в model.train() (см. ниже).
-
-model_kwargs = dict(cfg.model.params) if cfg.model.kind != 'rubert' else {}
+# Гиперпараметры конфига теперь типизированные поля cfg.model, а не свободный словарь.
+# Для rubert имена полей схемы (checkpoint) не совпадают с именами конструктора (model_name),
+# поэтому маппим явно; num_labels берём из данных, а не из конфига (см. предыдущий разбор).
+# Для log_reg/catboost остаётся выкинуть служебные поля (kind — дискриминатор,
+# ngram_range/max_features — уже ушли в векторайзер выше) и передать остальное как есть.
 if cfg.model.kind == 'rubert':
-    model_kwargs['num_labels'] = len(dm.classes)
-
-model = build_model(cfg.model.kind, **model_kwargs)
+    # num_labels — это максимальное значение метки + 1, а не количество оставшихся
+    # после фильтра классов: min_class_count вырезает редкие Категория из середины
+    # диапазона (напр. классы 2/9/12/14), но их числовые значения остаются в данных
+    # как есть (BertDataset кладёт сырое значение Категория в тензор без переиндексации).
+    # Если взять len(dm.classes), голова классификатора окажется меньше максимального
+    # индекса метки, и CrossEntropyLoss упадёт на CUDA-assert "t < n_classes".
+    model = build_model(
+        cfg.model.kind,
+        model_name=cfg.model.checkpoint,
+        num_labels=max(dm.classes) + 1,
+        max_length=cfg.model.max_length,
+    )
+else:
+    model_kwargs = cfg.model.model_dump(exclude={'kind', 'ngram_range', 'max_features'})
+    model = build_model(cfg.model.kind, **model_kwargs)
 
 mlflow_ctx = contextlib.nullcontext()
 if cfg.tracking.enabled:
-    init_mlflow(cfg)
+    init_mlflow(cfg.tracking)
     run_name = f"{cfg.model.kind}_{datetime.now():%Y%m%d_%H%M%S}"
     mlflow_ctx = mlflow.start_run(run_name=run_name)
 
@@ -73,11 +89,19 @@ with mlflow_ctx:
         mlflow.log_params(flatten_config_params(cfg))
 
     run_start = time.perf_counter()
-    logger.info("Обучение начато: model=%s fine_tune_mode=%s", cfg.model.kind, cfg.model.fine_tune_mode)
+    #logger.info("Обучение начато: model=%s fine_tune_mode=%s", cfg.model.kind, cfg.model.fine_tune_mode)
 
     if cfg.model.kind == 'rubert':
-        train_kwargs = dict(cfg.models.params)
-        train_kwargs['callbacks'] = [FileLoggingCallback(logger)]
+        # Имена полей схемы не везде совпадают с именами TrainingArguments
+        # (batch_size -> per_device_*_batch_size), поэтому маппим явно, а не splat'им cfg.model.
+        train_kwargs = dict(
+            num_train_epochs=cfg.model.num_train_epochs,
+            learning_rate=cfg.model.learning_rate,
+            per_device_train_batch_size=cfg.model.batch_size,
+            per_device_eval_batch_size=cfg.model.batch_size,
+            warmup_ratio=cfg.model.warmup_ratio,
+            callbacks=[FileLoggingCallback(logger)],
+        )
         if cfg.tracking.enabled and cfg.model.fine_tune_mode == 'full':
             # HF MLflowCallback логирует params/metrics прямо в текущий активный run.
             # Для gradual-режима не включаем: два Trainer'а внутри одного train() вызовут
@@ -138,7 +162,7 @@ with mlflow_ctx:
 
     # 9. Залогировать запуск (дата, модель, f1, время выполнения) в общий data/run_log.csv
     run_log_path = "data/run_log.csv"
-    log_run(model_name=cfg.model.kind, f1=summary['f1_macro'][0], duration_sec=run_duration, log_path=run_log_path)
+    log_run(model_name=cfg.model.kind, f1=summary['f1_weighted'][0], duration_sec=run_duration, log_path=run_log_path)
 
     if cfg.tracking.enabled:
         mlflow.log_metrics({

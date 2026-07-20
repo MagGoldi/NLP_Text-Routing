@@ -43,7 +43,7 @@ class BaseModel(ABC):
 
 class LogRegModel(BaseModel):
     def __init__(self, **kwargs):
-        self.model = LogisticRegression(random_state=42, max_iter=1000, **kwargs)
+        self.model = LogisticRegression(random_state=42, **kwargs)
         self.is_fitted = False
     
     def train(self, X_train, y_train, X_val=None, y_val=None, **kwargs):
@@ -74,7 +74,7 @@ class LogRegModel(BaseModel):
 class CatBoostModel(BaseModel):
     def __init__(self, text_features=None, **kwargs):
         self.text_features = text_features
-        self.model = CatBoostClassifier(random_seed=42, iterations=250, **kwargs)
+        self.model = CatBoostClassifier(random_seed=42, **kwargs)
         self.is_fitted = False
     
     def train(self, X_train, y_train, X_val=None, y_val=None, **kwargs):
@@ -150,6 +150,7 @@ class RuBERTModel(BaseModel):
             per_device_eval_batch_size=32,
             eval_strategy='epoch',
             save_strategy='epoch',
+            save_total_limit=1,  # иначе Trainer копит чекпоинт (~2ГБ) на КАЖДОЙ эпохе навсегда
             logging_dir='./logs',
             load_best_model_at_end=True,
             metric_for_best_model='f1_macro',
@@ -307,8 +308,8 @@ MODEL_REGISTRY = {
     'ensemble': EnsembleModel,
 }
 
-def build_model(model_name: str, **kwargs):
+def build_model(kind: str, **kwargs):
     """Фабричная функция для создания модели."""
-    if model_name not in MODEL_REGISTRY:
-        raise ValueError(f"Unknown model '{model_name}'. Available: {list(MODEL_REGISTRY.keys())}")
-    return MODEL_REGISTRY[model_name](**kwargs)
+    if kind not in MODEL_REGISTRY:
+        raise ValueError(f"Unknown model '{kind}'. Available: {list(MODEL_REGISTRY.keys())}")
+    return MODEL_REGISTRY[kind](**kwargs)

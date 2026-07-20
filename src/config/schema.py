@@ -20,6 +20,7 @@ class DataCfg(StrictModel):
     test_size: float = Field(0.15, gt=0, lt=1)
     val_size: float = Field(0.15, gt=0, lt=1)
     random_state: int = 42
+    min_df: 2
 
     @model_validator(mode="after")
     def _splits_must_fit(self):
@@ -56,6 +57,7 @@ class LogRegCfg(BaseModelCfg):
     max_iter: int = Field(1000, ge=1)
     class_weight: Literal["balanced"] | None = None
     # векторайзер — часть модели, значит и его настройки живут тут
+    # ngram_range — это (min_n, max_n) для TfidfVectorizer, не список конкретных N
     ngram_range: tuple[int, int] = (1, 2)
     max_features: int = Field(10_000, ge=1)
 

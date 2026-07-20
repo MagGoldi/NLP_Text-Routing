@@ -10,9 +10,9 @@ import html
 import pymorphy3
 from time import perf_counter
 
-from src.config.schema import PreprocessingCfg
+from src.config.loader import load_config
 
-CONFIG = PreprocessingCfg
+CONFIG = load_config().preprocessing
 EXTRA_STOPWORDS = CONFIG.extra_stopwords
 
 MORPHY = pymorphy3.MorphAnalyzer()
