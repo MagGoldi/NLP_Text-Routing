@@ -16,6 +16,7 @@ from src.callbacks import FileLoggingCallback
 from src.mlflow_utils import init_mlflow, flatten_config_params, log_model_artifact
 from src.data.preprocessor import timed_preprocess
 from src.data.load import load_dataset
+from src.data.augment import augment_minority_classes
 from src.models.dataloader import TextDataManager
 from src.models.models import build_model
 from src.visualization.visualizer import Visualizer, log_run
@@ -48,8 +49,10 @@ dm = TextDataManager(
     val_size=cfg.data.val_size,
     random_state=cfg.data.random_state,
 )
+# 2.1 этап - агументация 
+dm.X_train_str, dm.y_train = augment_minority_classes(dm.X_train_str, dm.y_train, min_count=30, n_aug=10)
 
-if cfg.model.kind == 'rubert':
+if cfg.model.kind in ['rubert', 'ruroberta']:
     train_loader, val_loader, test_loader, tokenizer = dm.get_bert_dataloaders()
 elif cfg.model.kind == 'catboost':
     X_train_tf, X_val_tf, X_test_tf = dm.get_catboost_data()
@@ -66,7 +69,7 @@ else:
 # поэтому маппим явно; num_labels берём из данных, а не из конфига (см. предыдущий разбор).
 # Для log_reg/catboost остаётся выкинуть служебные поля (kind — дискриминатор,
 # ngram_range/max_features — уже ушли в векторайзер выше) и передать остальное как есть.
-if cfg.model.kind == 'rubert':
+if cfg.model.kind in ['rubert', 'ruroberta']:
     # num_labels — это максимальное значение метки + 1, а не количество оставшихся
     # после фильтра классов: min_class_count вырезает редкие Категория из середины
     # диапазона (напр. классы 2/9/12/14), но их числовые значения остаются в данных
@@ -101,7 +104,7 @@ with mlflow_ctx:
     run_start = time.perf_counter()
     #logger.info("Обучение начато: model=%s fine_tune_mode=%s", cfg.model.kind, cfg.model.fine_tune_mode)
 
-    if cfg.model.kind == 'rubert':
+    if cfg.model.kind in ['rubert', 'ruroberta']:
         # Имена полей схемы не везде совпадают с именами TrainingArguments
         # (batch_size -> per_device_*_batch_size), поэтому маппим явно, а не splat'им cfg.model.
         train_kwargs = dict(
@@ -128,7 +131,7 @@ with mlflow_ctx:
     viz = Visualizer(output_dir="data/visualizations", model_name=cfg.model.kind, dpi=300, top_k=10)
 
     # Предсказания
-    if cfg.model.kind == 'rubert':
+    if cfg.model.kind in ['rubert', 'ruroberta']:
         y_val_pred = model_fit.predict(val_loader)
         y_test_pred = model_fit.predict(test_loader)
         y_val_proba = model_fit.predict_proba(val_loader)

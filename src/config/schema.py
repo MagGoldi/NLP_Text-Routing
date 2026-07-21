@@ -90,6 +90,24 @@ class RubertCfg(BaseModelCfg):
             raise ValueError("fine_tune_mode='gradual' требует unfreeze_schedule")
         return self
 
+class RurobertaCfg(BaseModelCfg):
+    kind: Literal["ruroberta"]
+    checkpoint: str = "ai-forever/ruRoberta-large"
+    fine_tune_mode: Literal["full", "gradual"] = "full"
+    learning_rate: float = Field(2e-5, gt=0)
+    num_train_epochs: int = Field(3, ge=1)
+    batch_size: int = Field(16, ge=1)
+    max_length: int = Field(512, ge=8, le=512)
+    warmup_ratio: float = Field(0.1, ge=0, le=1)
+    unfreeze_schedule: list[int] | None = None
+
+    @model_validator(mode="after")
+    def _gradual_needs_schedule(self):
+        if self.fine_tune_mode == "gradual" and not self.unfreeze_schedule:
+            raise ValueError("fine_tune_mode='gradual' требует unfreeze_schedule")
+        return self
+
+
 class TrackingCfg(StrictModel):
     enabled: bool = True
     backend: Literal["mlflow", "noop"] = "mlflow"
@@ -102,7 +120,7 @@ class TrackingCfg(StrictModel):
         return v.strip().replace(" ", "-")   # валидаторы могут не только проверять, но и нормализовать
 
 ModelCfg = Annotated[
-    Union[LogRegCfg, CatBoostCfg, RubertCfg],
+    Union[LogRegCfg, CatBoostCfg, RubertCfg, RurobertaCfg],
     Field(discriminator="kind"),
 ]
 

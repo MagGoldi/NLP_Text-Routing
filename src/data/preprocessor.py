@@ -115,7 +115,7 @@ def timed_preprocess(series, model_name):
         result = series.apply(clean_text_classic)
     elif model_name == 'catboost':
         result = series.apply(clean_text_for_catboost)
-    elif model_name == 'rubert':
+    elif model_name in ['rubert', 'ruroberta']:
         result = series.apply(clean_text_for_rubert)
     else:
         result = series.apply(clean_text_classic)
