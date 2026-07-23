@@ -24,23 +24,28 @@ def flatten_config_params(cfg: Config) -> dict:
     return flat
 
 
-def log_model_artifact(model_name: str, model_fit, artifact_path: str = "model"):
+_FLAVOR_LOGGERS = {
+    "sklearn": lambda m, p: mlflow.sklearn.log_model(m.model, artifact_path=p),
+    "catboost": lambda m, p: mlflow.catboost.log_model(m.model, artifact_path=p),
+    "transformers": lambda m, p: mlflow.transformers.log_model(
+        transformers_model={"model": m.model, "tokenizer": m.tokenizer},
+        artifact_path=p,
+        task="text-classification",
+    ),
+}
+
+
+def log_model_artifact(model_fit, artifact_path: str = "model"):
     """
-    Логирует обученную модель во «флейворе», соответствующем её типу.
-    Для ensemble пропускается (мета-модель + базовые модели пока не упаковываются
-    в единый MLflow-артефакт — известное ограничение, а не баг).
+    Логирует обученную модель во «флейворе», который она сама объявляет через
+    class-атрибут mlflow_flavor (см. models.py). Модели без этого атрибута
+    (например EnsembleModel — мета-модель + базовые модели пока не упаковываются
+    в единый MLflow-артефакт) молча пропускаются, вместо падения на неизвестном kind.
     """
-    if model_name == "log_reg":
-        mlflow.sklearn.log_model(model_fit.model, artifact_path=artifact_path)
-    elif model_name == "catboost":
-        mlflow.catboost.log_model(model_fit.model, artifact_path=artifact_path)
-    elif model_name == "rubert":
-        mlflow.transformers.log_model(
-            transformers_model={"model": model_fit.model, "tokenizer": model_fit.tokenizer},
-            artifact_path=artifact_path,
-            task="text-classification",
-        )
-    elif model_name == "ensemble":
-        mlflow.log_param("model_artifact_skipped", "ensemble logging not implemented yet")
-    else:
-        raise ValueError(f"Unknown model_name for mlflow logging: {model_name}")
+    flavor = getattr(model_fit, "mlflow_flavor", None)
+    if flavor is None:
+        mlflow.log_param("model_artifact_skipped", f"{type(model_fit).__name__} logging not implemented yet")
+        return
+    if flavor not in _FLAVOR_LOGGERS:
+        raise ValueError(f"Unknown mlflow flavor '{flavor}' for {type(model_fit).__name__}")
+    _FLAVOR_LOGGERS[flavor](model_fit, artifact_path)

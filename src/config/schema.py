@@ -16,7 +16,7 @@ class DataCfg(StrictModel):
     path: Path
     text_column: str = "Текст Сообщения"
     label_column: str = "Категория"
-    min_class_count: int = Field(5, ge=1)      # твой theme_counts > 5 переехал сюда
+    min_class_count: int = Field(5, ge=1)      # классы с меньшим числом примеров отсеиваются
     test_size: float = Field(0.15, gt=0, lt=1)
     val_size: float = Field(0.15, gt=0, lt=1)
     random_state: int = 42
@@ -131,7 +131,3 @@ class Config(StrictModel):
     model: ModelCfg
     tracking: TrackingCfg
     logging: LoggingCfg = LoggingCfg()
-
-# def build_model(cfg: ModelCfg, num_labels: int) -> BaseTextClassifier:
-#     cls = _MODELS[cfg.kind]
-#     return cls(cfg, num_labels=num_labels)

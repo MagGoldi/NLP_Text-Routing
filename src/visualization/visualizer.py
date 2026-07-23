@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics import (
     confusion_matrix, classification_report, roc_auc_score,
-    accuracy_score, f1_score, precision_score, recall_score
+    accuracy_score, f1_score,
 )
 from sklearn.preprocessing import label_binarize
 import warnings
@@ -15,10 +15,7 @@ warnings.filterwarnings("ignore")
 
 
 def log_run(model_name: str, f1_macro: float, f1_weighted: float, duration_sec: float, log_path: str = "data/run_log.csv"):
-    """
-    Добавляет строку с результатом запуска модели в общий CSV-лог экспериментов
-    (дата, модель, f1_macro, f1_weighted, время выполнения). Один файл на все модели/подходы.
-    """
+    """Дописывает строку в общий CSV-лог запусков (все модели пишут в один файл)."""
     os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
     file_exists = os.path.isfile(log_path)
     with open(log_path, "a", newline="", encoding="utf-8") as f:
@@ -36,18 +33,11 @@ def log_run(model_name: str, f1_macro: float, f1_weighted: float, duration_sec: 
 
 
 class Visualizer:
-    """
-    Визуализатор для многоклассовой классификации с большим числом классов (60+).
-    Адаптирован для компактного отображения.
-    """
+    """Визуализация метрик мультикласс-классификации; графики только по топ-K классам,
+    чтобы оставаться читаемыми при большом их числе."""
+
     def __init__(self, output_dir: str = "data/visualizations", model_name: str = None, dpi: int = 300, top_k: int = 10):
-        """
-        :param output_dir: базовая папка для сохранения рисунков
-        :param model_name: если указано, результаты пишутся в output_dir/model_name
-            (чтобы визуализации разных моделей/подходов не перезаписывали друг друга)
-        :param dpi: разрешение
-        :param top_k: сколько классов показывать на матрице ошибок и вероятностях
-        """
+        """model_name != None -> пишет в output_dir/model_name, чтобы модели не затирали друг друга."""
         self.output_dir = os.path.join(output_dir, model_name) if model_name else output_dir
         self.dpi = dpi
         self.top_k = top_k
@@ -63,11 +53,8 @@ class Visualizer:
         plt.close(fig)
         print(f"✅ Сохранён график: {path}")
 
-    # ---------- 1. Распределение классов (горизонтальный барчарт) ----------
     def plot_class_distribution(self, y_train, y_val, y_test, class_names=None):
-        """
-        Горизонтальная столбчатая диаграмма для всех классов (удобно при 60 классах).
-        """
+        """Горизонтальная столбчатая диаграмма для всех классов (удобно при 60 классах)."""
         fig, axes = plt.subplots(1, 3, figsize=(12, max(6, len(set(y_train)) * 0.3)))
         datasets = [("Train", y_train), ("Validation", y_val), ("Test", y_test)]
         if class_names is None:
@@ -83,12 +70,8 @@ class Visualizer:
         plt.tight_layout()
         self._save_figure(fig, "class_distribution.png")
 
-    # ---------- 2. Матрица ошибок только для топ-K классов ----------
     def plot_confusion_matrix_top(self, y_true, y_pred, class_names=None, title="Confusion Matrix (Top-K)"):
-        """
-        Строит матрицу ошибок только для top-K самых частых классов в y_true.
-        Нормализованная (по строкам) для лучшей интерпретации.
-        """
+        """Матрица ошибок по top-K самых частых классов, нормализованная по строкам."""
         # Определяем top-K классов по частоте в истинных метках
         if class_names is None:
             class_names = sorted(set(y_true))
@@ -118,12 +101,8 @@ class Visualizer:
         plt.tight_layout()
         self._save_figure(fig, "confusion_matrix_top.png")
 
-    # ---------- 3. Метрики по классам (bar chart) ----------
     def plot_metrics_per_class(self, y_true, y_pred, class_names=None, metric='f1'):
-        """
-        Отображает precision, recall, f1 для каждого класса в виде горизонтальных барчартов.
-        Сортировка по выбранной метрике (по умолчанию f1).
-        """
+        """Precision/recall/f1 по каждому классу, отсортировано по metric."""
         if class_names is None:
             class_names = sorted(set(y_true))
         report = classification_report(y_true, y_pred, output_dict=True, target_names=class_names)
@@ -143,11 +122,8 @@ class Visualizer:
         plt.tight_layout()
         self._save_figure(fig, "metrics_per_class.png")
 
-    # ---------- 4. Топ ошибок (текстовая таблица) ----------
     def print_top_confusions(self, y_true, y_pred, class_names=None, n=10):
-        """
-        Выводит топ-N самых частых ошибок (из какого класса в какой).
-        """
+        """Выводит топ-N самых частых ошибок (из какого класса в какой)."""
         if class_names is None:
             class_names = sorted(set(y_true))
         cm = confusion_matrix(y_true, y_pred, labels=class_names)
@@ -169,11 +145,8 @@ class Visualizer:
                 f.write(f"  {true_cls} -> {pred_cls}: {cnt}\n")
         print(f"✅ Таблица ошибок сохранена в {self.output_dir}/top_confusions.txt")
 
-    # ---------- 5. ROC-AUC (микро и макро) ----------
     def plot_roc_auc_summary(self, y_true, y_proba, class_names=None):
-        """
-        Вычисляет микро- и макро- AUC и выводит их в виде текста (без графиков).
-        """
+        """Вычисляет микро- и макро- AUC и выводит их в виде текста (без графиков)."""
         if class_names is None:
             class_names = sorted(set(y_true))
         y_bin = label_binarize(y_true, classes=class_names)
@@ -191,11 +164,8 @@ class Visualizer:
         except Exception as e:
             print(f"⚠️ Не удалось вычислить ROC-AUC: {e}")
 
-    # ---------- 6. Распределение вероятностей для топ-K классов ----------
     def plot_probability_distribution_top(self, y_true, y_proba, class_names=None):
-        """
-        Показывает гистограммы вероятностей только для top-K самых частых классов.
-        """
+        """Показывает гистограммы вероятностей только для top-K самых частых классов."""
         if class_names is None:
             class_names = sorted(set(y_true))
         freq = pd.Series(y_true).value_counts()
@@ -221,21 +191,9 @@ class Visualizer:
         plt.tight_layout()
         self._save_figure(fig, "probability_distribution_top.png")
 
-    # ---------- 7a. Универсальное извлечение важности признаков ----------
     def extract_feature_importance(self, model, feature_names=None):
-        """
-        Достаёт важность признаков из любой обёртки модели (BaseModel) или
-        сырого объекта (sklearn/CatBoost), не зная заранее её типа.
-
-        Поддерживает:
-          - линейные модели с .coef_ (например LogisticRegression)
-          - модели с .feature_importances_ (например CatBoost)
-        Для моделей без интерпретируемых по-признаково весов (RuBERT, Ensemble
-        поверх вероятностей и т.п.) возвращает (None, None) — вызывающий код
-        должен пропустить построение графика.
-
-        :return: (feature_names, importances) либо (None, None)
-        """
+        """Достаёт .coef_/.feature_importances_ из любой модели по дак-тайпингу.
+        Возвращает (None, None), если у модели их нет (напр. transformers)."""
         raw_model = getattr(model, "model", model)
 
         if hasattr(raw_model, "coef_"):
@@ -253,12 +211,8 @@ class Visualizer:
 
         return list(feature_names), importances
 
-    # ---------- 7. Feature importance (оставляем, адаптируем под мультикласс) ----------
     def plot_feature_importance(self, feature_names, coefficients, top_n=10, title="Важность признаков"):
-        """
-        Для мультикласса coefficients могут быть матрицей (n_classes, n_features).
-        Берём среднее абсолютное значение по классам.
-        """
+        """Для мультикласса coefficients — матрица (n_classes, n_features), берём среднее |.|."""
         if coefficients.ndim == 2:
             coef_avg = np.mean(np.abs(coefficients), axis=0)
         else:
@@ -273,11 +227,8 @@ class Visualizer:
         ax.grid(axis="x", linestyle="--", alpha=0.7)
         self._save_figure(fig, "feature_importance.png")
 
-    # ---------- 8. Сохранение таблицы метрик (все классы + summary) ----------
     def save_metrics_table(self, y_true, y_pred, class_names=None, filename="metrics.csv"):
-        """
-        Сохраняет полный classification report и summary в CSV.
-        """
+        """Сохраняет полный classification report и summary в CSV."""
         if class_names is None:
             class_names = sorted(set(y_true))
         report = classification_report(y_true, y_pred, output_dict=True, target_names=class_names)

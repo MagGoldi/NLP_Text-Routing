@@ -1,7 +1,22 @@
 [project]
 name = "nlp-classification"
 version = "0.1.0"
-description = "Add your description here"
+description = "Классификация обращений пользователей по категориям (log_reg / catboost / rubert / ruroberta)"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pandas>=3.0",
+    "numpy>=2.5",
+    "scikit-learn>=1.8",
+    "catboost>=1.2",
+    "transformers>=5.12",
+    "torch>=2.11",
+    "mlflow>=3.11",
+    "pydantic>=2.12",
+    "pyyaml>=6.0",
+    "nltk>=3.9",
+    "pymorphy3>=2.0",
+    "joblib>=1.5",
+    "matplotlib>=3.10",
+    "seaborn>=0.13",
+]

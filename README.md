@@ -1,4 +1,4 @@
-# 📨 Text Routing 
+# 📨 Text Routing
 
 Автоматическая классификация обращений пользователей по категориям на русском языке.
 
@@ -6,69 +6,60 @@
 
 ## 📌 Описание проекта
 
-Цель проекта — построить систему, способную автоматически определять категорию входящего сообщения на основе его текста, тематики и ответственного лица. Это позволит ускорить маршрутизацию тикетов и снизить нагрузку на операторов.
+Цель проекта — построить систему, способную автоматически определять категорию входящего сообщения на основе его текста. Это позволит ускорить маршрутизацию тикетов и снизить нагрузку на операторов.
 
-Задача формализуется как многоклассовая классификация (17 классов), где входные данные включают:
-
-- `Текст Сообщения` — текст обращения
-- `Тематика` — тема запроса
-- `Ответственное лицо` — потенциальный адресат
+Задача формализуется как многоклассовая классификация (17 классов, сильно несбалансированы).
 
 ---
 
-## 🧠 Методы
+## 🧠 Модели
 
-В рамках проекта были реализованы и сравнены следующие подходы:
+Все модели запускаются одним и тем же `src/models/main.py`, конфигурация — через `configs/config.yaml` (см. `model.kind`):
 
-- ✅ **Baseline**: TF-IDF + Logistic Regression
-- ✅ **CatBoost**: модель с учётом текстовых и категориальных признаков
-- ✅ **Transformer**: fine-tuning `DeepPavlov/rubert-base-cased`
-- ✅ **Ensemble**: объединение CatBoost и RuBERT
+- **`log_reg`** — TF-IDF + логистическая регрессия
+- **`catboost`** — CatBoost на сыром тексте (`text_features`)
+- **`rubert`** — fine-tuning `DeepPavlov/rubert-base-cased`
+- **`ruroberta`** — fine-tuning `ai-forever/ruRoberta-large`
+- **`ensemble`** — стекинг поверх уже обученных моделей; в пайплайн пока не встроен
+
+Для трансформеров доступны gradual fine-tuning (заморозка/разморозка слоёв), focal loss, early stopping, аугментация редких классов.
 
 ---
 
 ## 📁 Датасет
 
-- **Объём**: 2000 обучающих примеров и 1000 тестовых
-- **Классы**: 17 (несбалансированы)
-- **Признаки**:
-  - `Текст Сообщения` — основной вход
-  - `Тематика` — категориальный признак (161 уникальное значение)
-  - `Ответственное лицо` — категориальный признак (75 уникальных значений)
+- `data/raw/train_dataset_train.csv` — 2000 размеченных обращений, внутри пайплайна делится на train/val/test (`TextDataManager`)
+- Колонки: `Текст Сообщения` (вход), `Категория` (целевая метка, 17 классов), `Тематика`/`Ответственное лицо` (пока не используются моделями)
 
 ---
 
-## 📚 Related Work
+## ⚙️ Инфраструктура
 
-- [Banking77: Intent Classification Benchmark](https://arxiv.org/abs/2003.04807)
-- [TREC: Text Retrieval Conference](https://trec.nist.gov/)
-- [RuSentiment: Russian Sentiment Dataset](https://github.com/text-machine-lab/RuSentiment)
+- **Конфиг**: `configs/config.yaml`, валидируется типизированной Pydantic-схемой (`src/config/schema.py`) — опечатка или несовместимые поля падают сразу при загрузке, а не посреди обучения
+- **Логи**: каждый запуск пишет файл в `logs/{model}_{timestamp}.log` (`src/logging_setup.py`)
+- **MLflow**: параметры/метрики/артефакты/модель логируются в `./mlruns` (`src/mlflow_utils.py`); UI — `src/mlflow_ui.sh`
+- **Визуализация**: графики и таблицы метрик на `data/visualizations/<model>/`, история запусков — `data/run_log.csv` (`src/visualization/visualizer.py`)
 
+---
 
-customer-complaint-classification/
-├── data/               # игнорируется git, но есть .gitkeep
-│   ├── raw/
-│   └── processed/
-├── notebooks/          # jupyter для EDA и прототипирования
+## 📂 Структура
+
+```
+├── configs/
+│   └── config.yaml          # модель, препроцессинг, данные, логирование, tracking
+├── data/
+│   ├── raw/                  # исходный csv
+│   └── visualizations/       # графики и метрики по каждой модели
+├── notebook/
+│   └── eda.ipynb              # EDA / упражнения
 ├── src/
-│   ├── __init__.py
-│   ├── data/           # загрузка, препроцессинг
-│   ├── features/       # извлечение признаков
-│   ├── models/         # обучение, оценка
-│   ├── api/            # FastAPI
-│   └── visualization/  # визуализации для streamlit
-├── frontend/           # streamlit app
-├── tests/
-├── configs/            # конфиги (модель, параметры)
-├── docker/
-│   ├── Dockerfile.api
-│   ├── Dockerfile.frontend
-│   └── docker-compose.yml
-├── mlruns/             # (может в .gitignore) или используем MLflow server
-├── airflow/            # DAGs для периодического переобучения
-├── .github/            # CI/CD (lint, tests)
-├── Makefile
-├── pyproject.toml      # poetry
-├── README.md
-└── .gitignore
-
+│   ├── config/                # Pydantic-схема + загрузчик конфига
+│   ├── data/                  # загрузка, препроцессинг, аугментация
+│   ├── models/                 # BaseModel + реализации, TextDataManager, main.py (entrypoint)
+│   ├── visualization/          # графики, таблицы метрик, run_log.csv
+│   ├── callbacks.py            # HF Trainer -> файловый логгер
+│   ├── logging_setup.py
+│   └── mlflow_utils.py
+├── pyproject.toml
+└── README.md
+```

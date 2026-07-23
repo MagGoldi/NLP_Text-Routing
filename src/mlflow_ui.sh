@@ -1,12 +1,10 @@
 #!/bin/bash
-# Launch MLflow tracking UI
-# URL: http://localhost:5000
-# Docs: https://mlflow.org/docs/latest/tracking.html
+# Запускает MLflow UI поверх ./mlruns (backend, куда реально пишет main.py). http://localhost:5000
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-uv run mlflow ui \
-    --backend-store-uri "sqlite:///${PROJECT_ROOT}/mlflow.db" \
+/home/andrew/worka/DeepLearning/.venv/bin/mlflow ui \
+    --backend-store-uri "file:${PROJECT_ROOT}/mlruns" \
     --port 5000 \
     --host 0.0.0.0

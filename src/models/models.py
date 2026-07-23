@@ -1,100 +1,131 @@
+from typing import ClassVar
+
+import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, f1_score
+from sklearn.feature_extraction.text import TfidfVectorizer
 import joblib
 from abc import ABC, abstractmethod
 import numpy as np
 from catboost import CatBoostClassifier
 import torch
 import torch.nn.functional as F
-from transformers import Trainer
 
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, Trainer, TrainingArguments
+
+from src.models.dataloader import BertDataset
 
 
 # Models
 
 class BaseModel(ABC):
     """Абстрактный класс для всех моделей."""
-    
+
     @abstractmethod
-    def train(self, X_train, y_train, X_val=None, y_val=None, **kwargs):
-        """Обучает модель. X может быть в разных форматах (sparse, DataFrame, torch)."""
+    def train(self, texts, y, val_texts=None, val_y=None, **kwargs):
+        """Обучает модель на сыром тексте (pd.Series) и метках."""
         pass
-    
+
     @abstractmethod
-    def predict(self, X):
-        """Возвращает предсказанные классы (np.array)."""
+    def predict(self, texts):
+        """Возвращает предсказанные классы (np.array) по сырому тексту."""
         pass
-    
+
     @abstractmethod
-    def predict_proba(self, X):
-        """Возвращает вероятности (np.array shape (n_samples, n_classes))."""
+    def predict_proba(self, texts):
+        """Возвращает вероятности (np.array shape (n_samples, n_classes)) по сырому тексту."""
         pass
-    
+
     @abstractmethod
     def save(self, path: str):
         """Сохраняет модель в файл."""
         pass
-    
+
     @classmethod
     @abstractmethod
     def load(cls, path: str):
         """Загружает модель из файла."""
         pass
 
+    @classmethod
+    def from_config(cls, model_cfg, **extra):
+        """Дефолт: поля конфига 1:1 в конструктор. Не abstractmethod — иначе
+        EnsembleModel (собирается вручную, не из конфига) не инстанцировался бы."""
+        return cls(**model_cfg.model_dump(exclude={'kind'}))
+
 
 class LogRegModel(BaseModel):
-    def __init__(self, **kwargs):
-        self.model = LogisticRegression(random_state=42, **kwargs)
+    mlflow_flavor: ClassVar[str] = "sklearn"
+
+    def __init__(self, C=1.0, max_iter=1000, class_weight=None,
+                 ngram_range=(1, 2), max_features=10_000, min_df=1, analyzer='word'):
+        self.vectorizer = TfidfVectorizer(
+            ngram_range=ngram_range, max_features=max_features, min_df=min_df, analyzer=analyzer,
+        )
+        self.model = LogisticRegression(random_state=42, C=C, max_iter=max_iter, class_weight=class_weight)
         self.is_fitted = False
-    
-    def train(self, X_train, y_train, X_val=None, y_val=None, **kwargs):
-        self.model.fit(X_train, y_train)
+
+    def train(self, texts, y, val_texts=None, val_y=None, **kwargs):
+        X_train = self.vectorizer.fit_transform(texts)
+        self.model.fit(X_train, y)
         self.is_fitted = True
-        if X_val is not None and y_val is not None:
-            y_pred = self.model.predict(X_val)
-            print(classification_report(y_val, y_pred))
+        if val_texts is not None and val_y is not None:
+            X_val = self.vectorizer.transform(val_texts)
+            print(classification_report(val_y, self.model.predict(X_val)))
         return self
-    
-    def predict(self, X):
-        return self.model.predict(X)
-    
-    def predict_proba(self, X):
-        return self.model.predict_proba(X)
-    
+
+    def predict(self, texts):
+        return self.model.predict(self.vectorizer.transform(texts))
+
+    def predict_proba(self, texts):
+        return self.model.predict_proba(self.vectorizer.transform(texts))
+
+    def get_feature_names(self):
+        return self.vectorizer.get_feature_names_out()
+
     def save(self, path: str):
-        joblib.dump(self.model, path)
-    
+        joblib.dump({'vectorizer': self.vectorizer, 'model': self.model}, path)
+
     @classmethod
     def load(cls, path: str):
         model = cls()
-        model.model = joblib.load(path)
+        bundle = joblib.load(path)
+        model.vectorizer = bundle['vectorizer']
+        model.model = bundle['model']
         model.is_fitted = True
         return model
 
 
 class CatBoostModel(BaseModel):
-    def __init__(self, text_features=None, **kwargs):
-        self.text_features = text_features
-        self.model = CatBoostClassifier(random_seed=42, **kwargs)
-        self.is_fitted = False
-    
-    def train(self, X_train, y_train, X_val=None, y_val=None, **kwargs):
-        eval_set = (X_val, y_val) if X_val is not None and y_val is not None else None
-        self.model.fit(
-            X_train, y_train,
-            text_features=self.text_features,
-            eval_set=eval_set,
-            **kwargs
+    mlflow_flavor: ClassVar[str] = "catboost"
+
+    def __init__(self, iterations=1000, depth=6, learning_rate=0.03, auto_class_weights='Balanced'):
+        self.model = CatBoostClassifier(
+            random_seed=42, iterations=iterations, depth=depth,
+            learning_rate=learning_rate, auto_class_weights=auto_class_weights,
         )
+        self.is_fitted = False
+
+    @classmethod
+    def from_config(cls, model_cfg, **extra):
+        # ngram_range/max_features/min_df/analyzer — векторайзерные поля, CatBoost их не читает
+        kwargs = model_cfg.model_dump(exclude={'kind', 'ngram_range', 'max_features', 'min_df', 'analyzer'})
+        return cls(**kwargs)
+
+    def train(self, texts, y, val_texts=None, val_y=None, **kwargs):
+        X_train = pd.DataFrame({'text': texts})
+        eval_set = None
+        if val_texts is not None and val_y is not None:
+            eval_set = (pd.DataFrame({'text': val_texts}), val_y)
+        self.model.fit(X_train, y, text_features=['text'], eval_set=eval_set, **kwargs)
         self.is_fitted = True
         return self
-    
-    def predict(self, X):
-        return self.model.predict(X).ravel()
 
-    def predict_proba(self, X):
-        return self.model.predict_proba(X)
+    def predict(self, texts):
+        return self.model.predict(pd.DataFrame({'text': texts})).ravel()
+
+    def predict_proba(self, texts):
+        return self.model.predict_proba(pd.DataFrame({'text': texts}))
 
     def save(self, path: str):
         self.model.save_model(path)
@@ -108,10 +139,17 @@ class CatBoostModel(BaseModel):
         return model
 
 
-class RuBERTModel(BaseModel):
-    def __init__(self, model_name='DeepPavlov/rubert-base-cased', num_labels=None, max_length=512, **kwargs):
+class TransformerModel(BaseModel):
+    """
+    Общий класс для fine-tuning любой HF-модели классификации текста
+    (rubert, ruroberta и т.д.) — отличаются только чекпоинтом/max_length,
+    которые приходят из конфига, поэтому одного класса достаточно на все.
+    """
+    mlflow_flavor: ClassVar[str] = "transformers"
+
+    def __init__(self, model_name='DeepPavlov/rubert-base-cased', num_labels=None, max_length=512):
         if num_labels is None:
-            raise ValueError("RuBERTModel требует явный num_labels (например, из cfg.data.num_labels).")
+            raise ValueError("TransformerModel требует явный num_labels (например, из данных: max(dm.classes) + 1).")
         self.model_name = model_name
         self.num_labels = num_labels
         self.max_length = max_length
@@ -119,24 +157,23 @@ class RuBERTModel(BaseModel):
         self.trainer = None
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.is_fitted = False
-    
+
+    @classmethod
+    def from_config(cls, model_cfg, **extra):
+        return cls(model_name=model_cfg.checkpoint, num_labels=extra.get('num_labels'), max_length=model_cfg.max_length)
+
     def train(
         self,
-        train_loader,
-        val_loader,
+        texts,
+        y,
+        val_texts=None,
+        val_y=None,
         fine_tune_mode='full',   # 'full' или 'gradual'
+        batch_size=16,
         **kwargs
     ):
-        """
-        Параметры для gradual режима (можно передавать в kwargs):
-            head_epochs: int = 3
-            head_lr: float = 5e-4
-            unfreeze_layers: int = 4   # сколько верхних слоёв энкодера разморозить
-            unfreeze_epochs: int = 3
-            unfreeze_lr: float = 2e-5
-        Остальные kwargs напрямую передаются в TrainingArguments.
-        """
-        # --- извлекаем специфичные для gradual параметры ---
+        """gradual: head_epochs/head_lr/unfreeze_layers/unfreeze_epochs/unfreeze_lr в kwargs.
+        Остальные kwargs идут напрямую в TrainingArguments."""
         head_epochs = kwargs.pop('head_epochs', 3)
         head_lr = kwargs.pop('head_lr', 5e-4)
         unfreeze_layers = kwargs.pop('unfreeze_layers', 4)
@@ -145,11 +182,13 @@ class RuBERTModel(BaseModel):
         # callbacks не является полем TrainingArguments, поэтому вынимаем его отдельно
         callbacks = kwargs.pop('callbacks', None)
 
-        # --- базовые настройки TrainingArguments ---
+        train_dataset = BertDataset(texts, y, self.tokenizer, self.max_length)
+        eval_dataset = BertDataset(val_texts, val_y, self.tokenizer, self.max_length) if val_texts is not None else None
+
         base_args = dict(
             output_dir='./bert_results',
-            per_device_train_batch_size=32,
-            per_device_eval_batch_size=32,
+            per_device_train_batch_size=batch_size,
+            per_device_eval_batch_size=batch_size,
             eval_strategy='epoch',
             save_strategy='epoch',
             save_total_limit=1,  # иначе Trainer копит чекпоинт (~2ГБ) на КАЖДОЙ эпохе навсегда
@@ -157,16 +196,13 @@ class RuBERTModel(BaseModel):
             load_best_model_at_end=True,
             metric_for_best_model='f1_macro',
         )
-        # Обновляем тем, что передал пользователь (может переопределить)
         base_args.update(kwargs)
 
-        # --- метрика ---
         def compute_metrics(eval_pred):
             predictions, labels = eval_pred
             predictions = np.argmax(predictions, axis=1)
             return {'f1_macro': f1_score(labels, predictions, average='macro')}
 
-        # --- загружаем модель ---
         self.model = AutoModelForSequenceClassification.from_pretrained(
             self.model_name,
             num_labels=self.num_labels
@@ -181,8 +217,8 @@ class RuBERTModel(BaseModel):
             self.trainer = FocalLossTrainer(
                 model=self.model,
                 args=training_args,
-                train_dataset=train_loader.dataset,
-                eval_dataset=val_loader.dataset,
+                train_dataset=train_dataset,
+                eval_dataset=eval_dataset,
                 compute_metrics=compute_metrics,
                 callbacks=callbacks,
             )
@@ -201,8 +237,8 @@ class RuBERTModel(BaseModel):
             trainer1 = FocalLossTrainer(
                 model=self.model,
                 args=stage1_args,
-                train_dataset=train_loader.dataset,
-                eval_dataset=val_loader.dataset,
+                train_dataset=train_dataset,
+                eval_dataset=eval_dataset,
                 compute_metrics=compute_metrics,
                 callbacks=callbacks,
             )
@@ -223,8 +259,8 @@ class RuBERTModel(BaseModel):
             trainer2 = FocalLossTrainer(
                 model=self.model,
                 args=stage2_args,
-                train_dataset=train_loader.dataset,
-                eval_dataset=val_loader.dataset,
+                train_dataset=train_dataset,
+                eval_dataset=eval_dataset,
                 compute_metrics=compute_metrics,
                 callbacks=callbacks,
             )
@@ -236,163 +272,14 @@ class RuBERTModel(BaseModel):
         self.is_fitted = True
         return self
 
-    def predict(self, dataloader):
-        predictions = self.trainer.predict(dataloader.dataset)
+    def predict(self, texts):
+        dataset = BertDataset(texts, labels=None, tokenizer=self.tokenizer, max_len=self.max_length)
+        predictions = self.trainer.predict(dataset)
         return np.argmax(predictions.predictions, axis=1)
 
-    def predict_proba(self, dataloader):
-        predictions = self.trainer.predict(dataloader.dataset)
-        probs = np.exp(predictions.predictions) / np.sum(
-            np.exp(predictions.predictions), axis=1, keepdims=True
-        )
-        return probs
-
-    def save(self, path: str):
-        self.trainer.save_model(path)
-        # токенизатор тоже можно сохранить
-        self.tokenizer.save_pretrained(path)
-
-    @classmethod
-    def load(cls, path: str):
-        model = cls()
-        model.model = AutoModelForSequenceClassification.from_pretrained(path)
-        model.tokenizer = AutoTokenizer.from_pretrained(path)
-        model.is_fitted = True
-        return model
-
-
-class RuRobertaModel(BaseModel):
-    def __init__(self, model_name='ai-forever/ruRoberta-large', num_labels=None, max_length=512, **kwargs):
-        if num_labels is None:
-            raise ValueError("RuRobertaModel требует явный num_labels (например, из cfg.data.num_labels).")
-        self.model_name = model_name
-        self.num_labels = num_labels
-        self.max_length = max_length
-        self.model = None
-        self.trainer = None
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.is_fitted = False
-    
-    def train(
-        self,
-        train_loader,
-        val_loader,
-        fine_tune_mode='full',   # 'full' или 'gradual'
-        **kwargs
-    ):
-        """
-        Параметры для gradual режима (можно передавать в kwargs):
-            head_epochs: int = 3
-            head_lr: float = 5e-4
-            unfreeze_layers: int = 4   # сколько верхних слоёв энкодера разморозить
-            unfreeze_epochs: int = 3
-            unfreeze_lr: float = 2e-5
-        Остальные kwargs напрямую передаются в TrainingArguments.
-        """
-        # --- извлекаем специфичные для gradual параметры ---
-        head_epochs = kwargs.pop('head_epochs', 3)
-        head_lr = kwargs.pop('head_lr', 5e-4)
-        unfreeze_layers = kwargs.pop('unfreeze_layers', 4)
-        unfreeze_epochs = kwargs.pop('unfreeze_epochs', 3)
-        unfreeze_lr = kwargs.pop('unfreeze_lr', 2e-5)
-        # callbacks не является полем TrainingArguments, поэтому вынимаем его отдельно
-        callbacks = kwargs.pop('callbacks', None)
-
-        # --- базовые настройки TrainingArguments ---
-        base_args = dict(
-            output_dir='./bert_results',
-            per_device_train_batch_size=32,
-            per_device_eval_batch_size=32,
-            eval_strategy='epoch',
-            save_strategy='epoch',
-            save_total_limit=1,  # иначе Trainer копит чекпоинт (~2ГБ) на КАЖДОЙ эпохе навсегда
-            logging_dir='./logs',
-            load_best_model_at_end=True,
-            metric_for_best_model='f1_macro',
-        )
-        # Обновляем тем, что передал пользователь (может переопределить)
-        base_args.update(kwargs)
-
-        # --- метрика ---
-        def compute_metrics(eval_pred):
-            predictions, labels = eval_pred
-            predictions = np.argmax(predictions, axis=1)
-            return {'f1_macro': f1_score(labels, predictions, average='macro')}
-
-        # --- загружаем модель ---
-        self.model = AutoModelForSequenceClassification.from_pretrained(
-            self.model_name,
-            num_labels=self.num_labels
-        )
-
-        if fine_tune_mode == 'full':
-            # Классическое дообучение всей модели
-            training_args = TrainingArguments(
-                num_train_epochs=base_args.pop('num_train_epochs', 3),
-                **base_args
-            )
-            self.trainer = FocalLossTrainer(
-                model=self.model,
-                args=training_args,
-                train_dataset=train_loader.dataset,
-                eval_dataset=val_loader.dataset,
-                compute_metrics=compute_metrics,
-                callbacks=callbacks,
-            )
-            self.trainer.train()
-
-        elif fine_tune_mode == 'gradual':
-            # ЭТАП 1: замораживаем всю основу, учим только классификатор
-            for param in self.model.bert.parameters():
-                param.requires_grad = False
-
-            stage1_args = TrainingArguments(
-                num_train_epochs=head_epochs,
-                learning_rate=head_lr,
-                **base_args
-            )
-            trainer1 = FocalLossTrainer(
-                model=self.model,
-                args=stage1_args,
-                train_dataset=train_loader.dataset,
-                eval_dataset=val_loader.dataset,
-                compute_metrics=compute_metrics,
-                callbacks=callbacks,
-            )
-            trainer1.train()
-
-            # ЭТАП 2: размораживаем последние unfreeze_layers слоёв энкодера
-            # В rubert слои лежат в model.bert.encoder.layer (список)
-            layers = self.model.bert.encoder.layer
-            for layer in layers[-unfreeze_layers:]:
-                for param in layer.parameters():
-                    param.requires_grad = True
-
-            stage2_args = TrainingArguments(
-                num_train_epochs=unfreeze_epochs,
-                learning_rate=unfreeze_lr,
-                **base_args
-            )
-            trainer2 = FocalLossTrainer(
-                model=self.model,
-                args=stage2_args,
-                train_dataset=train_loader.dataset,
-                eval_dataset=val_loader.dataset,
-                compute_metrics=compute_metrics,
-                callbacks=callbacks,
-            )
-            trainer2.train()
-            self.trainer = trainer2   # сохраняем последний Trainer
-        else:
-            raise ValueError("fine_tune_mode должен быть 'full' или 'gradual'")
-
-
-    def predict(self, dataloader):
-        predictions = self.trainer.predict(dataloader.dataset)
-        return np.argmax(predictions.predictions, axis=1)
-
-    def predict_proba(self, dataloader):
-        predictions = self.trainer.predict(dataloader.dataset)
+    def predict_proba(self, texts):
+        dataset = BertDataset(texts, labels=None, tokenizer=self.tokenizer, max_len=self.max_length)
+        predictions = self.trainer.predict(dataset)
         probs = np.exp(predictions.predictions) / np.sum(
             np.exp(predictions.predictions), axis=1, keepdims=True
         )
@@ -413,6 +300,10 @@ class RuRobertaModel(BaseModel):
 
 
 class EnsembleModel(BaseModel):
+    """
+    Вне конфига: нет ModelCfg-варианта под ensemble, собирается вручную из уже
+    обученных моделей — EnsembleModel(base_models=[model_a, model_b]).
+    """
     def __init__(self, base_models, meta_model=None):
         """
         base_models: список уже обученных моделей (экземпляров BaseModel)
@@ -421,32 +312,32 @@ class EnsembleModel(BaseModel):
         self.base_models = base_models
         self.meta_model = meta_model if meta_model is not None else LogisticRegression()
         self.is_fitted = False
-    
-    def train(self, X_train, y_train, X_val=None, y_val=None, **kwargs):
+
+    def train(self, texts, y, val_texts=None, val_y=None, **kwargs):
         # Ожидаем, что base_models уже обучены; обучаем только мета-модель на вероятностях из base_models на валидации
-        if X_val is None or y_val is None:
+        if val_texts is None or val_y is None:
             raise ValueError("Для обучения ансамбля нужна валидационная выборка.")
         # Получаем вероятности на валидации от каждой базовой модели
-        val_probas = [model.predict_proba(X_val) for model in self.base_models]
+        val_probas = [model.predict_proba(val_texts) for model in self.base_models]
         X_meta = np.hstack(val_probas)
-        self.meta_model.fit(X_meta, y_val)
+        self.meta_model.fit(X_meta, val_y)
         self.is_fitted = True
         return self
-    
-    def predict(self, X):
-        probas = [model.predict_proba(X) for model in self.base_models]
+
+    def predict(self, texts):
+        probas = [model.predict_proba(texts) for model in self.base_models]
         X_meta = np.hstack(probas)
         return self.meta_model.predict(X_meta)
-    
-    def predict_proba(self, X):
-        probas = [model.predict_proba(X) for model in self.base_models]
+
+    def predict_proba(self, texts):
+        probas = [model.predict_proba(texts) for model in self.base_models]
         X_meta = np.hstack(probas)
         return self.meta_model.predict_proba(X_meta)
-    
+
     def save(self, path: str):
         # Сохраняем все базовые модели и мета-модель в один архив (или отдельно)
         pass
-    
+
     @classmethod
     def load(cls, path: str):
         pass
@@ -479,13 +370,14 @@ class FocalLossTrainer(Trainer):
 MODEL_REGISTRY = {
     'log_reg': LogRegModel,
     'catboost': CatBoostModel,
-    'rubert': RuBERTModel,
-    'ensemble': EnsembleModel,
-    'ruroberta': RuRobertaModel
+    'rubert': TransformerModel,
+    'ruroberta': TransformerModel,
+    # 'ensemble' сюда намеренно не входит: EnsembleModel не управляется конфигом,
+    # собирается вручную из уже обученных моделей (см. докстринг класса).
 }
 
-def build_model(kind: str, **kwargs):
-    """Фабричная функция для создания модели."""
-    if kind not in MODEL_REGISTRY:
-        raise ValueError(f"Unknown model '{kind}'. Available: {list(MODEL_REGISTRY.keys())}")
-    return MODEL_REGISTRY[kind](**kwargs)
+def build_model(model_cfg, **extra):
+    """Фабричная функция: строит модель из типизированного per-model конфига (cfg.model)."""
+    if model_cfg.kind not in MODEL_REGISTRY:
+        raise ValueError(f"Unknown model '{model_cfg.kind}'. Available: {list(MODEL_REGISTRY.keys())}")
+    return MODEL_REGISTRY[model_cfg.kind].from_config(model_cfg, **extra)

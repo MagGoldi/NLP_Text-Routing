@@ -9,8 +9,12 @@ wheels/
 # Virtual environments
 .venv
 
+# Office lock files
+.~lock.*#
+
 # Experiment tracking / logs (generated at runtime)
 mlruns/
 logs/
 bert_results/
+catboost_info/
 

@@ -1,2 +1,2 @@
-Micro-average AUC: 0.9579
-Macro-average AUC: 0.8867
+Micro-average AUC: 0.9618
+Macro-average AUC: 0.8497
