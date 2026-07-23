@@ -41,13 +41,20 @@ model:
   # Loss: CrossEntriopy, Focal
 
   #4
+ 
+  # kind: ruroberta
+  # fine_tune_mode: full
+  # learning_rate: 2.0e-5
+  # num_train_epochs: 50
+  # max_length: 365
+  # batch_size: 4
 
-  kind: ruroberta
-  fine_tune_mode: full
-  learning_rate: 2.0e-5
-  num_train_epochs: 50
-  max_length: 365
-  batch_size: 4
+  #5 
+
+  kind: ensemble
+  base_models: [rubert: 'models/rubert_run1',
+                catboost: 'models/rubert_run2'] 
+
 
 data:
   path: 'data/raw/train_dataset_train.csv'

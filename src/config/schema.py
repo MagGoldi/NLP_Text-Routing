@@ -107,6 +107,10 @@ class RurobertaCfg(BaseModelCfg):
             raise ValueError("fine_tune_mode='gradual' требует unfreeze_schedule")
         return self
 
+class EnsembleCfg(BaseModelCfg):
+    kind: Literal["ensemble"]
+    base_models: list[dict] = [{'rubert': 'models/rubert_run1'},
+                                {'catboost': 'models/rubert_run2'}]
 
 class TrackingCfg(StrictModel):
     enabled: bool = True
@@ -120,7 +124,7 @@ class TrackingCfg(StrictModel):
         return v.strip().replace(" ", "-")   # валидаторы могут не только проверять, но и нормализовать
 
 ModelCfg = Annotated[
-    Union[LogRegCfg, CatBoostCfg, RubertCfg, RurobertaCfg],
+    Union[LogRegCfg, CatBoostCfg, RubertCfg, RurobertaCfg, EnsembleCfg],
     Field(discriminator="kind"),
 ]
 

@@ -1,3 +1,5 @@
+import os
+import json
 from typing import ClassVar
 
 import pandas as pd
@@ -287,16 +289,29 @@ class TransformerModel(BaseModel):
 
     def save(self, path: str):
         self.trainer.save_model(path)
-        # токенизатор тоже можно сохранить
         self.tokenizer.save_pretrained(path)
+        # max_length нигде в HF-чекпоинте не сохраняется сам по себе — держим отдельно
+        with open(os.path.join(path, "meta.json"), "w") as f:
+            json.dump({"max_length": self.max_length}, f)
 
     @classmethod
     def load(cls, path: str):
-        model = cls()
+        # cls() тут не подходит: __init__ требует num_labels и заново тянет
+        # чекпоинт из HF Hub. __new__ обходит это, атрибуты выставляем сами.
+        with open(os.path.join(path, "meta.json")) as f:
+            meta = json.load(f)
+        model = cls.__new__(cls)
         model.model = AutoModelForSequenceClassification.from_pretrained(path)
         model.tokenizer = AutoTokenizer.from_pretrained(path)
+        model.model_name = path
+        model.max_length = meta["max_length"]
+        model.num_labels = model.model.config.num_labels
+        model.trainer = Trainer(model=model.model)  # только для predict(), без обучения
         model.is_fitted = True
         return model
+
+
+_LOADABLE_MODEL_CLASSES = {cls.__name__: cls for cls in (LogRegModel, CatBoostModel, TransformerModel)}
 
 
 class EnsembleModel(BaseModel):
@@ -313,8 +328,21 @@ class EnsembleModel(BaseModel):
         self.meta_model = meta_model if meta_model is not None else LogisticRegression()
         self.is_fitted = False
 
+    @classmethod
+    def from_config(cls, model_cfg, **extra):
+        base_model_path = [(model, model_cfg.base_models[model]) for model in model_cfg.base_models]
+        return cls.from_pretrained(base_model_path, meta_model = model_cfg.meta_model)
+
+    @classmethod
+    def from_pretrained(cls, specs, meta_model=None):
+        """specs: [(kind, path), ...], kind — ключ MODEL_REGISTRY (напр. 'catboost', 'rubert').
+        Загружает каждую базовую модель с диска и собирает из них ансамбль."""
+        base_models = [MODEL_REGISTRY[kind].load(path) for kind, path in specs]
+        return cls(base_models=base_models, meta_model=meta_model)
+
     def train(self, texts, y, val_texts=None, val_y=None, **kwargs):
-        # Ожидаем, что base_models уже обучены; обучаем только мета-модель на вероятностях из base_models на валидации
+        # обучаем только мета-модель на вероятностях из base_models на валидации
+
         if val_texts is None or val_y is None:
             raise ValueError("Для обучения ансамбля нужна валидационная выборка.")
         # Получаем вероятности на валидации от каждой базовой модели
@@ -335,12 +363,25 @@ class EnsembleModel(BaseModel):
         return self.meta_model.predict_proba(X_meta)
 
     def save(self, path: str):
-        # Сохраняем все базовые модели и мета-модель в один архив (или отдельно)
-        pass
+        """path — папка: каждая базовая модель уходит в свою подпапку/файл + метаданные ансамбля."""
+        os.makedirs(path, exist_ok=True)
+        base_meta = []
+        for i, model in enumerate(self.base_models):
+            sub_path = os.path.join(path, f"base_{i}_{type(model).__name__}")
+            model.save(sub_path)
+            base_meta.append({"class": type(model).__name__, "path": os.path.basename(sub_path)})
+        joblib.dump({"meta_model": self.meta_model, "base_meta": base_meta}, os.path.join(path, "ensemble_meta.pkl"))
 
     @classmethod
     def load(cls, path: str):
-        pass
+        bundle = joblib.load(os.path.join(path, "ensemble_meta.pkl"))
+        base_models = [
+            _LOADABLE_MODEL_CLASSES[m["class"]].load(os.path.join(path, m["path"]))
+            for m in bundle["base_meta"]
+        ]
+        model = cls(base_models=base_models, meta_model=bundle["meta_model"])
+        model.is_fitted = True
+        return model
 
 
 class FocalLossTrainer(Trainer):
@@ -372,8 +413,7 @@ MODEL_REGISTRY = {
     'catboost': CatBoostModel,
     'rubert': TransformerModel,
     'ruroberta': TransformerModel,
-    # 'ensemble' сюда намеренно не входит: EnsembleModel не управляется конфигом,
-    # собирается вручную из уже обученных моделей (см. докстринг класса).
+    'ensemble': EnsembleModel,
 }
 
 def build_model(model_cfg, **extra):
