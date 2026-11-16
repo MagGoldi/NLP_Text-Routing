@@ -330,8 +330,8 @@ class EnsembleModel(BaseModel):
 
     @classmethod
     def from_config(cls, model_cfg, **extra):
-        base_model_path = [(model, model_cfg.base_models[model]) for model in model_cfg.base_models]
-        return cls.from_pretrained(base_model_path, meta_model = model_cfg.meta_model)
+        specs = [next(iter(entry.items())) for entry in model_cfg.base_models]
+        return cls.from_pretrained(specs)
 
     @classmethod
     def from_pretrained(cls, specs, meta_model=None):

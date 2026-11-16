@@ -30,15 +30,12 @@ model:
 
   #3 
 
-  # kind: rubert
-  # fine_tune_mode: full
-  # learning_rate: 2.0e-5
-  # num_train_epochs: 50
-  # max_length: 365
+  kind: rubert
+  fine_tune_mode: full
+  learning_rate: 2.0e-5
+  num_train_epochs: 50
+  max_length: 365
 
-  # EarlyStopping: True
-  # Augmentation: True
-  # Loss: CrossEntriopy, Focal
 
   #4
  
@@ -51,9 +48,9 @@ model:
 
   #5 
 
-  kind: ensemble
-  base_models: [rubert: 'models/rubert_run1',
-                catboost: 'models/rubert_run2'] 
+  # kind: ensemble
+  # base_models: [rubert: 'models/rubert_run1',
+  #               catboost: 'models/rubert_run2'] 
 
 
 data:

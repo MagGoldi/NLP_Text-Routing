@@ -147,3 +147,6 @@ with mlflow_ctx:
         mlflow.log_artifact(run_log_path)
         mlflow.log_artifact(logger.log_path)
         log_model_artifact(model_fit)
+
+    
+    model_fit.save('/home/andrew/worka/NLP_classification/models/final_model')
